@@ -296,7 +296,7 @@ export default {
         return
       } else if (this.type === 'week') {
         const startDate = this.getWeekStartDate(date)
-        const endDate = new Date(date)
+        const endDate = new Date(startDate)
         endDate.setDate(startDate.getDate() + 6)
 
         this.$emit('select-week', [startDate, endDate])
