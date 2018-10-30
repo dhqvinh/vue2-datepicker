@@ -13,6 +13,16 @@ afterEach(() => {
 })
 
 describe('datepicker', () => {
+  it('prop: appendToBody', () => {
+    wrapper = mount(DatePicker, {
+      propsData: {
+        appendToBody: true
+      }
+    })
+    const popup = wrapper.find('.mx-datepicker-popup')
+    expect(popup.element.parentNode).toBe(document.body)
+  })
+
   it('click: pick date', () => {
     wrapper = mount(DatePicker, {
       propsData: {
@@ -71,8 +81,7 @@ describe('datepicker', () => {
     td1.at(14).trigger('click')
 
     Vue.nextTick(() => {
-      let emitted = wrapper.emittedByOrder()
-      expect(emitted).toHaveLength(0)
+      expect(wrapper.emitted().input).toBeUndefined()
       expect(td1.at(14).classes()).toContain('actived')
       expect(td2.at(13).classes()).toContain('disabled')
       expect(td2.at(14).classes()).not.toContain('disabled')
@@ -80,17 +89,15 @@ describe('datepicker', () => {
       const date1 = new Date(td1.at(14).element.title).setHours(0, 0, 0, 0)
       td2.at(16).trigger('click')
       Vue.nextTick(() => {
-        emitted = wrapper.emittedByOrder()
-
+        const emitted = wrapper.emitted()
         const date2 = new Date(td2.at(16).element.title).setHours(0, 0, 0, 0)
 
         expect(td2.at(16).classes()).toContain('actived')
         expect(td1.at(15).classes()).toContain('inrange')
         expect(td1.at(16).classes()).toContain('inrange')
         expect(td1.at(17).classes()).toContain('disabled')
-
-        expect(emitted).toHaveLength(2)
-        expect(emitted[0].args[0]).toEqual([new Date(date1), new Date(date2)])
+        expect(emitted.input).toHaveLength(1)
+        expect(emitted.input[0][0]).toEqual([new Date(date1), new Date(date2)])
         done()
       })
     })
@@ -251,11 +258,9 @@ describe('datepicker', () => {
       input.setValue('2018-09-10 ~ 2018-08-10')
       input.trigger('input')
       input.trigger('change')
-      expect(wrapper.emitted()).toEqual({
-        input: [[expectDate], [expectRange]],
-        change: [[expectDate], [expectRange]],
-        'input-error': [['2018-09-10 ~ 2018-08-10']]
-      })
+      const emitted = wrapper.emitted()
+      expect(emitted.input).toEqual([[expectDate], [expectRange]])
+      expect(emitted['input-error']).toEqual([['2018-09-10 ~ 2018-08-10']])
       done()
     })
   })
@@ -352,7 +357,7 @@ describe('calendar-panel', () => {
     wrapper = mount(CalendarPanel, {
       propsData: {
         value: new Date(2018, 4, 2),
-        notBefore: new Date(2018, 4, 1, 12),
+        notBefore: new Date(2018, 4, 2, 12),
         notAfter: new Date(2018, 4, 31, 12)
       }
     })
@@ -360,10 +365,30 @@ describe('calendar-panel', () => {
     for (let i = 0; i < 42; i++) {
       const td = tds.at(i)
       const classes = td.classes()
-      if (i < 2 || i > 32) {
+      if (i < 3 || i > 32) {
         expect(classes).toContain('disabled')
       } else {
         expect(classes).not.toContain('disabled')
+      }
+    }
+    const months = wrapper.findAll('.mx-panel-month .cell')
+    for (let i = 0; i < 12; i++) {
+      const month = months.at(i)
+      const classes = month.classes()
+      if (i === 4) {
+        expect(classes).not.toContain('disabled')
+      } else {
+        expect(classes).toContain('disabled')
+      }
+    }
+    const years = wrapper.findAll('.mx-panel-year .cell')
+    for (let i = 0; i < years.length; i++) {
+      const year = years.at(i)
+      const classes = year.classes()
+      if (i === 8) {
+        expect(classes).not.toContain('disabled')
+      } else {
+        expect(classes).toContain('disabled')
       }
     }
   })
@@ -589,7 +614,7 @@ describe('time-panel', () => {
     cells.at(0).trigger('click')
     const emitted = wrapper.emitted()
     expect(emitted).toEqual({
-      select: [[new Date(2018, 5, 5, 1)]]
+      pick: [[new Date(2018, 5, 5, 1)]]
     })
   })
 })

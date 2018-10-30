@@ -6,7 +6,7 @@
         class="mx-icon-last-year"
         @click="handleIconYear(-1)">&laquo;</a>
       <a
-        v-show="panel === 'DATE' || panel === 'WEEK'"
+        v-show="panel === 'DATE'"
         class="mx-icon-last-month"
         @click="handleIconMonth(-1)">&lsaquo;</a>
       <a
@@ -14,15 +14,15 @@
         class="mx-icon-next-year"
         @click="handleIconYear(1)">&raquo;</a>
       <a
-        v-show="panel === 'DATE' || panel === 'WEEK'"
+        v-show="panel === 'DATE'"
         class="mx-icon-next-month"
         @click="handleIconMonth(1)">&rsaquo;</a>
       <a
-        v-show="panel === 'DATE' || panel === 'WEEK'"
+        v-show="panel === 'DATE'"
         class="mx-current-month"
         @click="handleBtnMonth">{{months[calendarMonth]}}</a>
       <a
-        v-show="panel === 'DATE' || panel === 'WEEK' || panel === 'MONTH'"
+        v-show="panel === 'DATE' || panel === 'MONTH'"
         class="mx-current-year"
         @click="handleBtnYear">{{calendarYear}}</a>
       <a
@@ -35,7 +35,7 @@
     </div>
     <div class="mx-calendar-content">
       <panel-date
-        v-show="panel === 'DATE' || panel === 'WEEK'"
+        v-show="panel === 'DATE'"
         :value="value"
         :date-format="dateFormat"
         :calendar-month="calendarMonth"
@@ -63,7 +63,9 @@
         :time-picker-options="timePickerOptions"
         :value="value"
         :disabled-time="isDisabledTime"
-        @select="selectTime" />
+        :time-type="timeType"
+        @select="selectTime"
+        @pick="pickTime" />
     </div>
   </div>
 </template>
@@ -71,6 +73,7 @@
 <script>
 import { isValidDate, isDateObejct, formatDate } from '@/utils/index'
 import locale from '@/mixins/locale'
+import emitter from '@/mixins/emitter'
 import scrollIntoView from '@/utils/scroll-into-view'
 import PanelDate from '@/panel/date'
 import PanelYear from '@/panel/year'
@@ -80,7 +83,7 @@ import PanelTime from '@/panel/time'
 export default {
   name: 'CalendarPanel',
   components: { PanelDate, PanelYear, PanelMonth, PanelTime },
-  mixins: [locale],
+  mixins: [locale, emitter],
   props: {
     value: {
       default: null,
@@ -96,7 +99,7 @@ export default {
     },
     type: {
       type: String,
-      default: 'date'
+      default: 'date' // ['date', 'datetime'] zendy added 'month', 'year', mxie added "time"
     },
     dateFormat: {
       type: String,
@@ -144,7 +147,7 @@ export default {
     const calendarMonth = now.getMonth()
     const firstYear = Math.floor(calendarYear / 10) * 10
     return {
-      panel: 'DATE',
+      panel: 'NONE',
       dates: [],
       calendarMonth,
       calendarYear,
@@ -162,6 +165,11 @@ export default {
         this.calendarMonth = now.getMonth()
       }
     },
+    timeType () {
+      const h = /h+/.test(this.$parent.format) ? '12' : '24'
+      const a = /A/.test(this.$parent.format) ? 'A' : 'a'
+      return [h, a]
+    },
     timeHeader () {
       if (this.type === 'time') {
         return this.$parent.format
@@ -173,6 +181,12 @@ export default {
     },
     months () {
       return this.t('months')
+    },
+    notBeforeTime () {
+      return this.getCriticalTime(this.notBefore)
+    },
+    notAfterTime () {
+      return this.getCriticalTime(this.notAfter)
     }
   },
   watch: {
@@ -185,92 +199,97 @@ export default {
       handler: 'init'
     },
     panel: {
-      immediate: true,
       handler: 'handelPanelChange'
     }
   },
   methods: {
-    handelPanelChange (panel) {
+    handelPanelChange (panel, oldPanel) {
+      this.dispatch('DatePicker', 'panel-change', [panel, oldPanel])
       if (panel === 'YEAR') {
         this.firstYear = Math.floor(this.calendarYear / 10) * 10
       } else if (panel === 'TIME') {
         this.$nextTick(() => {
-          [...this.$el.querySelectorAll('.mx-panel-time .mx-time-list')].forEach(el => {
+          const list = this.$el.querySelectorAll('.mx-panel-time .mx-time-list')
+          for (let i = 0, len = list.length; i < len; i++) {
+            const el = list[i]
             scrollIntoView(el, el.querySelector('.actived'))
-          })
+          }
         })
       }
     },
-    init () {
-      const type = this.type
-      if (type === 'month') {
-        this.panel = 'MONTH'
-      } else if (type === 'year') {
-        this.panel = 'YEAR'
-      } else if (type === 'time') {
-        this.panel = 'TIME'
-      } else if (type === 'week') {
-        this.panel = 'WEEK'
+    init (val) {
+      if (val) {
+        const type = this.type
+        if (type === 'month') {
+          this.showPanelMonth()
+        } else if (type === 'year') {
+          this.showPanelYear()
+        } else if (type === 'time') {
+          this.showPanelTime()
+        } else {
+          this.showPanelDate()
+        }
       } else {
-        this.panel = 'DATE'
+        this.showPanelNone()
       }
-      this.updateNow(this.value)
     },
     // 根据value更新日历
     updateNow (value) {
-      if (this.type === 'week') {
-        this.now = this.startAt ? this.startAt : new Date()
-      } else {
-        this.now = value ? new Date(value) : new Date()
+      const now = value ? new Date(value) : new Date()
+      const oldNow = new Date(this.now)
+      this.dispatch('DatePicker', 'calendar-change', [now, oldNow])
+      this.now = now
+    },
+    getCriticalTime (value) {
+      if (!value) {
+        return null
       }
+      const date = new Date(value)
+      if (this.type === 'year') {
+        return new Date(date.getFullYear(), 0).getTime()
+      } else if (this.type === 'month') {
+        return new Date(date.getFullYear(), date.getMonth()).getTime()
+      } else if (this.type === 'date') {
+        return date.setHours(0, 0, 0, 0)
+      }
+      return date.getTime()
+    },
+    inBefore (time, startAt) {
+      startAt = startAt || this.startAt
+      return (this.notBeforeTime && time < this.notBeforeTime) ||
+        (startAt && time < this.getCriticalTime(startAt))
+    },
+    inAfter (time, endAt) {
+      endAt = endAt || this.endAt
+      return (this.notAfterTime && time > this.notAfterTime) ||
+        (endAt && time > this.getCriticalTime(endAt))
+    },
+    inDisabledDays (time) {
+      if (Array.isArray(this.disabledDays)) {
+        return this.disabledDays.some(v => this.getCriticalTime(v) === time)
+      } else if (typeof this.disabledDays === 'function') {
+        return this.disabledDays(new Date(time))
+      }
+      return false
+    },
+    isDisabledYear (year) {
+      const time = new Date(year, 0).getTime()
+      const maxTime = new Date(year + 1, 0).getTime() - 1
+      return this.inBefore(maxTime) || this.inAfter(time) || (this.type === 'year' && this.inDisabledDays(time))
+    },
+    isDisabledMonth (month) {
+      const time = new Date(this.calendarYear, month).getTime()
+      const maxTime = new Date(this.calendarYear, month + 1).getTime() - 1
+      return this.inBefore(maxTime) || this.inAfter(time) || (this.type === 'month' && this.inDisabledDays(time))
+    },
+    isDisabledDate (date) {
+      const time = new Date(date).getTime()
+      const maxTime = new Date(date).setHours(23, 59, 59, 999)
+      return this.inBefore(maxTime) || this.inAfter(time) || this.inDisabledDays(time)
     },
     isDisabledTime (date, startAt, endAt) {
       const time = new Date(date).getTime()
-      const notBefore = this.notBefore && (time < new Date(this.notBefore))
-      const notAfter = this.notAfter && (time > new Date(this.notAfter))
-      startAt = startAt === undefined ? this.startAt : startAt
-      startAt = startAt && (time < new Date(startAt))
-      endAt = endAt === undefined ? this.endAt : endAt
-      endAt = endAt && (time > new Date(endAt))
-      return notBefore || notAfter || startAt || endAt
-    },
-    isDisabledDate (date, startAt, endAt) {
-      const time = new Date(date).getTime()
-      let notBefore = this.notBefore && (time < new Date(this.notBefore).setHours(0, 0, 0, 0))
-      let notAfter = this.notAfter && (time > new Date(this.notAfter).setHours(0, 0, 0, 0))
-      if (this.type === 'week') {
-        // If type is week, need to add just notBefore & notAfter out of the week range
-        if (this.notBefore) {
-          notBefore = this.getWeekStartDate(this.notBefore)
-          notBefore.setDate(notBefore.getDate())
-          notBefore = time < notBefore.getTime()
-        }
-        if (this.notAfter) {
-          notAfter = this.getWeekStartDate(this.notAfter)
-          notAfter.setDate(notAfter.getDate() + 6)
-          notAfter = time > notAfter.getTime()
-        }
-      } else {
-        startAt = startAt === undefined ? this.startAt : startAt
-        startAt = startAt && (time < new Date(startAt).setHours(0, 0, 0, 0))
-        endAt = endAt === undefined ? this.endAt : endAt
-        endAt = endAt && (time > new Date(endAt).setHours(0, 0, 0, 0))
-      }
-      let disabledDays = false
-      if (Array.isArray(this.disabledDays)) {
-        disabledDays = this.disabledDays.some(v => new Date(v).setHours(0, 0, 0, 0) === time)
-      } else if (typeof this.disabledDays === 'function') {
-        disabledDays = this.disabledDays(new Date(date))
-      }
-      return notBefore || notAfter || disabledDays || startAt || endAt
-    },
-    isDisabledYear (year) {
-      const date = new Date(year, this.calendarMonth)
-      return this.isDisabledDate(date)
-    },
-    isDisabledMonth (month) {
-      const date = new Date(this.calendarYear, month)
-      return this.isDisabledDate(date)
+      return this.inBefore(time, startAt) || this.inAfter(time, endAt) || this.inDisabledDays(time)
     },
     selectDate (date) {
       if (this.type === 'datetime') {
@@ -291,25 +310,11 @@ export default {
             time = new Date(this.startAt)
           }
         }
-        this.$emit('select-time', time)
-        this.panel = 'TIME'
-        return
-      } else if (this.type === 'week') {
-        const startDate = this.getWeekStartDate(date)
-        const endDate = new Date(startDate)
-        endDate.setDate(startDate.getDate() + 6)
-
-        this.$emit('select-week', [startDate, endDate])
+        this.selectTime(time)
+        this.showPanelTime()
         return
       }
       this.$emit('select-date', date)
-    },
-    getWeekStartDate (date) {
-      const startDate = new Date(date)
-      // First day of the week: JS: 0-6 (Sun - Sat), DatePicker: 1-7 (Mon-Sun)
-      startDate.setHours(0, 0, 0, 0)
-      startDate.setDate(startDate.getDate() - startDate.getDay() + (this.firstDayOfWeek < 7 ? this.firstDayOfWeek : this.firstDayOfWeek - 7))
-      return startDate
     },
     selectYear (year) {
       this.changeCalendarYear(year)
@@ -326,13 +331,16 @@ export default {
       this.showPanelDate()
     },
     selectTime (time) {
-      this.$emit('select-time', time)
+      this.$emit('select-time', time, false)
+    },
+    pickTime (time) {
+      this.$emit('select-time', time, true)
     },
     changeCalendarYear (year) {
-      this.now = new Date(year, this.calendarMonth)
+      this.updateNow(new Date(year, this.calendarMonth))
     },
     changeCalendarMonth (month) {
-      this.now = new Date(this.calendarYear, month)
+      this.updateNow(new Date(this.calendarYear, month))
     },
     getSibling () {
       const calendars = this.$parent.$children.filter(v => v.$options.name === this.$options.name)
@@ -378,6 +386,12 @@ export default {
     },
     changePanelYears (flag) {
       this.firstYear = this.firstYear + flag * 10
+    },
+    showPanelNone () {
+      this.panel = 'NONE'
+    },
+    showPanelTime () {
+      this.panel = 'TIME'
     },
     showPanelDate () {
       this.panel = 'DATE'
